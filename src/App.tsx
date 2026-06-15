@@ -33,14 +33,16 @@ function OrgLayout() {
     queryFn: listOrgs,
   });
 
+  const memberOrg = orgs?.find((o) => o.id === orgId);
+  const activeOrg =
+    currentOrg?.id === orgId ? currentOrg : memberOrg ?? null;
+
   useEffect(() => {
-    if (!orgs) return;
-    const match = orgs.find((o) => o.id === orgId);
-    if (match) setCurrentOrg(match);
-  }, [orgs, orgId, setCurrentOrg]);
+    if (memberOrg) setCurrentOrg(memberOrg);
+  }, [memberOrg, setCurrentOrg]);
 
   if (isLoading) return <LoadingState />;
-  if (!currentOrg || currentOrg.id !== orgId) {
+  if (!activeOrg) {
     return <Navigate to="/orgs" replace />;
   }
 

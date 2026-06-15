@@ -1,22 +1,25 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconPlus } from "@tabler/icons-react";
-import { createOrg, joinByCode, joinByToken, listOrgs } from "@/api/orgs";
+import { createOrg, listOrgs } from "@/api/orgs";
 import { useAuthStore } from "@/stores/authStore";
 import { Button, Card, EmptyState, Input, Label, LoadingState } from "@/components/ui";
 import { RoleBadge } from "@/components/ui";
 import type { OrgSummary } from "@/types/api";
 import { ApiClientError } from "@/api/client";
+import { joinResultToOrgSummary, joinWithInvite } from "@/lib/orgJoin";
 
 export function OrgPickerPage() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const setCurrentOrg = useAuthStore((s) => s.setCurrentOrg);
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [newName, setNewName] = useState("");
   const [error, setError] = useState("");
+  const [joinLoading, setJoinLoading] = useState(false);
 
   const { data: orgs, isLoading } = useQuery({
     queryKey: ["orgs"],
@@ -31,20 +34,16 @@ export function OrgPickerPage() {
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setJoinLoading(true);
     try {
-      const isToken = joinCode.trim().length > 10;
-      const result = isToken
-        ? await joinByToken(joinCode.trim())
-        : await joinByCode(joinCode.trim().toUpperCase());
-      setCurrentOrg({
-        id: result.org_id,
-        name: result.org_name,
-        role: result.role,
-        created_at: result.joined_at,
-      });
+      const result = await joinWithInvite(joinCode);
+      setCurrentOrg(joinResultToOrgSummary(result));
+      await qc.invalidateQueries({ queryKey: ["orgs"] });
       navigate(`/org/${result.org_id}`);
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : "Join failed");
+    } finally {
+      setJoinLoading(false);
     }
   };
 
@@ -117,7 +116,9 @@ export function OrgPickerPage() {
               />
               {error && <p className="mt-2 text-xs text-ll-error">{error}</p>}
               <div className="mt-3 flex gap-2">
-                <Button type="submit">Join</Button>
+                <Button type="submit" disabled={joinLoading}>
+                  Join
+                </Button>
                 <Button type="button" variant="ghost" onClick={() => setJoining(false)}>
                   Cancel
                 </Button>

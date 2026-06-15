@@ -1,11 +1,15 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { IconEye, IconEyeOff } from "@tabler/icons-react";
 import { login, register } from "@/api/auth";
-import { joinByCode, joinByToken } from "@/api/orgs";
 import { useAuthStore } from "@/stores/authStore";
 import { Button, ErrorBanner, Input, Label } from "@/components/ui";
 import { ApiClientError } from "@/api/client";
+import {
+  joinResultToOrgSummary,
+  joinWithInvite,
+} from "@/lib/orgJoin";
 
 const DEMO_LOGS = [
   { t: "14:32:01", l: "ERROR", m: "gateway timeout — retrying attempt=2" },
@@ -28,7 +32,10 @@ const levelClass: Record<string, string> = {
 
 export function AuthPage() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const setTokens = useAuthStore((s) => s.setTokens);
+  const setCurrentOrg = useAuthStore((s) => s.setCurrentOrg);
+  const accessToken = useAuthStore((s) => s.accessToken);
 
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -38,7 +45,28 @@ export function AuthPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [joinCode, setJoinCode] = useState("");
+  const [joinEmail, setJoinEmail] = useState("");
+  const [joinPassword, setJoinPassword] = useState("");
   const [showJoin, setShowJoin] = useState(false);
+
+  const finishAuth = async (
+    accessToken: string,
+    refreshToken: string,
+    pendingInvite?: string,
+  ) => {
+    setTokens(accessToken, refreshToken);
+
+    const invite = pendingInvite?.trim();
+    if (invite) {
+      const result = await joinWithInvite(invite);
+      setCurrentOrg(joinResultToOrgSummary(result));
+      await qc.invalidateQueries({ queryKey: ["orgs"] });
+      navigate(`/org/${result.org_id}`);
+      return;
+    }
+
+    navigate("/orgs");
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,8 +74,7 @@ export function AuthPage() {
     setLoading(true);
     try {
       const tokens = await login(loginEmail, loginPassword);
-      setTokens(tokens.access_token, tokens.refresh_token);
-      navigate("/orgs");
+      await finishAuth(tokens.access_token, tokens.refresh_token, joinCode);
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : "Login failed");
     } finally {
@@ -61,8 +88,7 @@ export function AuthPage() {
     setLoading(true);
     try {
       const tokens = await register(regEmail, regPassword);
-      setTokens(tokens.access_token, tokens.refresh_token);
-      navigate("/orgs");
+      await finishAuth(tokens.access_token, tokens.refresh_token, joinCode);
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : "Registration failed");
     } finally {
@@ -70,15 +96,49 @@ export function AuthPage() {
     }
   };
 
-  const handleJoin = async (e: React.FormEvent) => {
+  const handleJoinWithLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      const isToken = joinCode.length > 10;
-      const result = isToken
-        ? await joinByToken(joinCode.trim())
-        : await joinByCode(joinCode.trim().toUpperCase());
+      const tokens = await login(joinEmail, joinPassword);
+      await finishAuth(tokens.access_token, tokens.refresh_token, joinCode);
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.message : "Sign in failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleJoinWithRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const tokens = await register(joinEmail, joinPassword);
+      await finishAuth(tokens.access_token, tokens.refresh_token, joinCode);
+    } catch (err) {
+      setError(
+        err instanceof ApiClientError ? err.message : "Registration failed",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleJoinExistingSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const { accessToken } = useAuthStore.getState();
+      if (!accessToken) {
+        setError("Sign in or create an account to use your invite.");
+        return;
+      }
+      const result = await joinWithInvite(joinCode);
+      setCurrentOrg(joinResultToOrgSummary(result));
+      await qc.invalidateQueries({ queryKey: ["orgs"] });
       navigate(`/org/${result.org_id}`);
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : "Join failed");
@@ -137,22 +197,59 @@ export function AuthPage() {
             <>
               <div className="mb-1 text-lg font-medium text-ll-text">Join organization</div>
               <div className="mb-6 text-xs text-ll-text-dim">
-                Enter an invite code or token
+                Sign in or create an account, then your invite is applied automatically
               </div>
-              <form onSubmit={handleJoin}>
-                <div className="mb-3.5">
+              <form onSubmit={handleJoinWithLogin} className="space-y-3.5">
+                <div>
                   <Label>Invite code or token</Label>
                   <Input
                     value={joinCode}
                     onChange={(e) => setJoinCode(e.target.value)}
                     placeholder="ABC123 or invite token"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <Input
+                    type="email"
+                    value={joinEmail}
+                    onChange={(e) => setJoinEmail(e.target.value)}
+                    placeholder="you@company.com"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Password</Label>
+                  <Input
+                    type="password"
+                    value={joinPassword}
+                    onChange={(e) => setJoinPassword(e.target.value)}
+                    placeholder="min 8 characters"
+                    minLength={8}
+                    required
                   />
                 </div>
                 {error && <ErrorBanner message={error} />}
-                <Button type="submit" className="mt-2 w-full" disabled={loading}>
-                  Join org
+                <Button type="submit" className="w-full" disabled={loading}>
+                  Sign in & join
                 </Button>
               </form>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={handleJoinWithRegister}
+                className="mt-2 w-full cursor-pointer rounded-ll border border-[#00FF9C55] bg-[#0d2b1f] py-2 text-[13px] text-ll-accent disabled:opacity-50"
+              >
+                Create account & join
+              </button>
+              {accessToken ? (
+                <form onSubmit={handleJoinExistingSession} className="mt-3">
+                  <Button type="submit" variant="ghost" className="w-full" disabled={loading}>
+                    Already signed in — join with invite only
+                  </Button>
+                </form>
+              ) : null}
               <button
                 type="button"
                 className="mt-4 text-center text-xs text-ll-text-dim"
