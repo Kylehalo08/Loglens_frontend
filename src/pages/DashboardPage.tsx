@@ -4,7 +4,8 @@ import { useParams } from "react-router-dom";
 import { listServices } from "@/api/services";
 import { searchLogs } from "@/api/logs";
 import { LogFeedLine } from "@/components/logs/LogComponents";
-import { LoadingState } from "@/components/ui";
+import { DemoLimitsNotice, ErrorBanner, LoadingState } from "@/components/ui";
+import { getErrorMessage } from "@/lib/apiErrors";
 import { last24hRange } from "@/lib/utils";
 import type { Service } from "@/types/api";
 
@@ -23,7 +24,7 @@ export function DashboardPage() {
     queryFn: () => listServices(orgId),
   });
 
-  const { data: totalLogs } = useQuery({
+  const { data: totalLogs, error: totalError } = useQuery({
     queryKey: ["dashboard-total", orgId],
     queryFn: () => searchLogs(orgId, { ...range, limit: 1 }),
   });
@@ -83,7 +84,16 @@ export function DashboardPage() {
 
   return (
     <div className="p-5">
-      <div className="mb-5 text-sm font-medium text-ll-text">Overview</div>
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div className="text-sm font-medium text-ll-text">Overview</div>
+        <DemoLimitsNotice className="max-w-md text-right" />
+      </div>
+
+      {totalError && (
+        <div className="mb-4 rounded-ll border border-[#e0555533] bg-[#2b0e0e] px-3 py-2">
+          <ErrorBanner message={getErrorMessage(totalError, "Failed to load dashboard")} />
+        </div>
+      )}
 
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
@@ -102,8 +112,8 @@ export function DashboardPage() {
           },
           {
             label: "Retention",
-            value: "30d",
-            sub: "log retention policy",
+            value: "6h",
+            sub: "demo log retention",
           },
         ].map((card) => (
           <div

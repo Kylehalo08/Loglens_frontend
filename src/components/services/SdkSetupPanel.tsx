@@ -9,7 +9,8 @@ import {
 } from "@tabler/icons-react";
 import { ingestLog } from "@/api/ingest";
 import { listApiKeys } from "@/api/services";
-import { Button, Input, Label, Select } from "@/components/ui";
+import { Button, DemoLimitsNotice, Input, Label, Select } from "@/components/ui";
+import { getErrorMessage } from "@/lib/apiErrors";
 import { getIngestBase } from "@/lib/utils";
 import { getTestApiKey, saveTestApiKey } from "@/lib/testKeyStorage";
 import type { Severity } from "@/types/api";
@@ -111,7 +112,7 @@ client.Error(ctx, "gateway timeout", map[string]any{"after_ms": 5000})`;
     } catch (err) {
       setSendResult({
         ok: false,
-        text: err instanceof Error ? err.message : "Ingest failed",
+        text: getErrorMessage(err, "Ingest failed"),
       });
     } finally {
       setSending(false);
@@ -135,6 +136,7 @@ client.Error(ctx, "gateway timeout", map[string]any{"after_ms": 5000})`;
 
       <div className="rounded-ll border border-ll-border bg-ll-elevated p-4">
         <div className="mb-3 text-xs font-medium text-ll-text">Send test log</div>
+        <DemoLimitsNotice className="mb-3" />
         <div className="mb-3">
           <Label>API key</Label>
           <Input

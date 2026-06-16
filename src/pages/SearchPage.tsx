@@ -11,7 +11,8 @@ import { aiNaturalLanguageQuery, aiSummarize } from "@/api/ai";
 import { searchLogs } from "@/api/logs";
 import { listServices } from "@/api/services";
 import { LogLine } from "@/components/logs/LogComponents";
-import { Button, FilterChip, LoadingState } from "@/components/ui";
+import { Button, DemoLimitsNotice, ErrorBanner, FilterChip, LoadingState } from "@/components/ui";
+import { getErrorMessage } from "@/lib/apiErrors";
 import { todayRange } from "@/lib/utils";
 import type { LogSearchParams, Severity } from "@/types/api";
 
@@ -37,7 +38,7 @@ export function SearchPage() {
     [services],
   );
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, refetch, error: searchError } = useQuery({
     queryKey: ["logs-search", orgId, params],
     queryFn: () => searchLogs(orgId, params),
   });
@@ -97,10 +98,19 @@ export function SearchPage() {
     <div>
       <div className="flex items-center justify-between border-b border-ll-border px-4 py-3">
         <span className="text-sm font-medium text-ll-text">Search logs</span>
-        <span className="font-mono text-[11px] text-ll-text-faint">
-          {pagination?.total.toLocaleString() ?? 0} results
-        </span>
+        <div className="flex flex-col items-end gap-1">
+          <span className="font-mono text-[11px] text-ll-text-faint">
+            {pagination?.total.toLocaleString() ?? 0} results
+          </span>
+          <DemoLimitsNotice className="text-right" />
+        </div>
       </div>
+
+      {searchError && (
+        <div className="mx-4 mt-3 rounded-ll border border-[#e0555533] bg-[#2b0e0e] px-3 py-2">
+          <ErrorBanner message={getErrorMessage(searchError, "Search failed")} />
+        </div>
+      )}
 
       <div className="mx-4 mt-3.5 flex items-center gap-2 rounded-lg border border-[#00FF9C44] bg-ll-elevated px-3 py-2.5">
         <IconSparkles size={16} className="shrink-0 text-ll-accent" />

@@ -1,3 +1,4 @@
+import { apiErrorMessage } from "@/lib/apiErrors";
 import { getApiBase } from "@/lib/utils";
 import { useAuthStore } from "@/stores/authStore";
 import type { ApiResponse } from "@/types/api";
@@ -71,9 +72,15 @@ export async function apiRequest<T>(
     }
   }
 
-  const json = (await res.json()) as ApiResponse<T>;
+  let json: ApiResponse<T>;
+  try {
+    json = (await res.json()) as ApiResponse<T>;
+  } catch {
+    throw new ApiClientError(apiErrorMessage(res.status), res.status);
+  }
+
   if (!json.success) {
-    throw new ApiClientError(json.error || "Request failed", res.status);
+    throw new ApiClientError(apiErrorMessage(res.status, json.error), res.status);
   }
   return json.data;
 }

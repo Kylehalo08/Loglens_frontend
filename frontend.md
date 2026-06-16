@@ -53,6 +53,41 @@ Every JSON HTTP response uses this shape:
 
 ---
 
+## Rate limiting (demo tier)
+
+When limits are exceeded, the API returns **HTTP 429** with `success: false`. There is **no `Retry-After` header** — use backoff or show a user message.
+
+| Endpoint / action | Limit | Scope |
+|-------------------|-------|--------|
+| `POST /v1/logs` (ingest) | 500 logs / hour | per org |
+| `POST /v1/logs` (ingest) | 5,000 logs / day | per org |
+| Ingestor (all routes) | 60 requests / minute | per IP |
+| `POST /auth/register`, `/login`, `/refresh` | 15 requests / minute | per IP |
+| All `/orgs/*` API routes | 120 requests / minute | per IP |
+| All `/orgs/*` API routes | 300 requests / minute | per user (JWT) |
+
+**429 body (general):**
+
+```json
+{ "success": false, "error": "rate limit exceeded" }
+```
+
+**429 body (ingest org quota):**
+
+```json
+{ "success": false, "error": "log ingest rate limit exceeded" }
+```
+
+**Suggested UI copy:**
+
+- Demo limits: up to **5,000 logs/day** per org (~**500/hour**), **6-hour** retention.
+- API 429: “Too many requests. Please wait a minute and try again.”
+- Ingest quota 429: “Daily log limit reached for this organization. Try again tomorrow or contact support.”
+
+**Log retention:** default **6 hours** (`LOG_RETENTION_HOURS` on server).
+
+---
+
 ## Authentication
 
 ### JWT access token

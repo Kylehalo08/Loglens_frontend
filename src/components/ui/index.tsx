@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { DEMO_LIMITS_COPY } from "@/lib/apiErrors";
 import type { Severity } from "@/types/api";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
 
@@ -183,6 +184,14 @@ export function RoleBadge({ role }: { role: string }) {
 export function ErrorBanner({ message }: { message: string }) {
   return (
     <div className="flex items-center gap-1 text-[11px] text-ll-error">{message}</div>
+  );
+}
+
+export function DemoLimitsNotice({ className }: { className?: string }) {
+  return (
+    <p className={cn("text-[11px] leading-relaxed text-ll-text-faint", className)}>
+      {DEMO_LIMITS_COPY}
+    </p>
   );
 }
 
