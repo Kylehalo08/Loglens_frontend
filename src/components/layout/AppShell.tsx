@@ -14,6 +14,7 @@ import { listServices } from "@/api/services";
 import { logout as apiLogout } from "@/api/auth";
 import { useAuthStore } from "@/stores/authStore";
 import { cn } from "@/lib/utils";
+import { isDeveloperPlus } from "@/lib/roles";
 
 function NavItem({
   to,
@@ -56,6 +57,7 @@ export function AppShell() {
   const navigate = useNavigate();
   const { currentOrg, refreshToken, clearAuth } = useAuthStore();
   const orgId = currentOrg?.id ?? "";
+  const showInvestigate = isDeveloperPlus(currentOrg?.role);
 
   const { data: services = [] } = useQuery({
     queryKey: ["services", orgId],
@@ -96,9 +98,11 @@ export function AppShell() {
           <NavItem to={`${base}/live`} icon={<IconPlayerPlay size={16} />}>
             Live feed
           </NavItem>
-          <NavItem to={`${base}/investigate`} icon={<IconRobot size={16} />}>
-            Investigate
-          </NavItem>
+          {showInvestigate && (
+            <NavItem to={`${base}/investigate`} icon={<IconRobot size={16} />}>
+              Investigate
+            </NavItem>
+          )}
 
           <div className="px-2.5 pb-1 pt-3 text-[10px] uppercase tracking-wider text-[#3a4a55]">
             Services

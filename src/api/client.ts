@@ -5,11 +5,13 @@ import type { ApiResponse } from "@/types/api";
 
 export class ApiClientError extends Error {
   status: number;
+  serverError?: string;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, serverError?: string) {
     super(message);
     this.name = "ApiClientError";
     this.status = status;
+    this.serverError = serverError;
   }
 }
 
@@ -80,7 +82,11 @@ export async function apiRequest<T>(
   }
 
   if (!json.success) {
-    throw new ApiClientError(apiErrorMessage(res.status, json.error), res.status);
+    throw new ApiClientError(
+      apiErrorMessage(res.status, json.error),
+      res.status,
+      json.error,
+    );
   }
   return json.data;
 }

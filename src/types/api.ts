@@ -112,29 +112,46 @@ export interface JoinResult {
   joined_at: string;
 }
 
-// AI types (mock until backend ready)
-export interface AIQueryResult {
-  query: string;
-  interpreted_filters: {
-    service_ids?: string[];
-    severity?: Severity[];
-    from?: string;
-    to?: string;
-    q?: string;
+// AI types (FR13–FR15)
+export interface AILogInput {
+  id: string;
+  timestamp: string;
+  severity: Severity;
+  message: string;
+  service_id: string;
+}
+
+export interface AIParsedQuery {
+  service_ids: string[];
+  severity: string[];
+  from: string | null;
+  to: string | null;
+  q: string;
+  limit: number;
+}
+
+export interface NLQResponse {
+  ai: {
+    provider: "gemini" | "openrouter";
+    model: string;
+    query: AIParsedQuery;
   };
-  logs_analyzed: number;
+  result: SearchResult;
 }
 
-export interface AIInvestigationResult {
-  root_cause: string;
-  confidence: "high" | "medium" | "low";
-  evidence: Array<{ title: string; detail: string }>;
-  related_logs: LogEntry[];
-}
-
-export interface AISummaryResult {
+export interface SummarizeResponse {
   summary: string;
-  log_count: number;
+  highlights: string[];
+  top_errors: Array<{ message: string; count: number }>;
+  confidence: number;
+}
+
+export interface InvestigateResponse {
+  hypothesis: string;
+  evidence: string[];
+  next_steps: string[];
+  related_log_ids: string[];
+  confidence: number;
 }
 
 // Audit (mock until API exists)

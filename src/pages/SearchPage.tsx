@@ -1,31 +1,48 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   IconAlertCircle,
   IconApps,
   IconCalendar,
   IconSparkles,
 } from "@tabler/icons-react";
-import { aiNaturalLanguageQuery, aiSummarize } from "@/api/ai";
+import {
+  AI_LOG_CAP,
+  aiNlq,
+  aiSummarize,
+  logToAIInput,
+  nlqQueryToSearchParams,
+  searchWindowLabel,
+} from "@/api/ai";
 import { searchLogs } from "@/api/logs";
 import { listServices } from "@/api/services";
 import { LogLine } from "@/components/logs/LogComponents";
-import { Button, DemoLimitsNotice, ErrorBanner, FilterChip, LoadingState } from "@/components/ui";
-import { getErrorMessage } from "@/lib/apiErrors";
+import {
+  Button,
+  DemoLimitsNotice,
+  ErrorBanner,
+  FilterChip,
+  LoadingState,
+} from "@/components/ui";
+import { AI_LIMITS_COPY, getErrorMessage } from "@/lib/apiErrors";
 import { todayRange } from "@/lib/utils";
-import type { LogSearchParams, Severity } from "@/types/api";
+import type { AIParsedQuery, LogSearchParams, Severity, SummarizeResponse } from "@/types/api";
 
 const SEVERITIES: Severity[] = ["DEBUG", "INFO", "WARN", "ERROR", "FATAL"];
 
 export function SearchPage() {
   const { orgId = "" } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [aiQuery, setAiQuery] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
+  const [parsedNlq, setParsedNlq] = useState<AIParsedQuery | null>(null);
+  const [nlqProvider, setNlqProvider] = useState<string | null>(null);
   const [params, setParams] = useState<LogSearchParams>({ page: 1, limit: 50 });
-  const [summary, setSummary] = useState<string | null>(null);
+  const [summary, setSummary] = useState<SummarizeResponse | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
 
   const { data: services = [] } = useQuery({
@@ -38,7 +55,7 @@ export function SearchPage() {
     [services],
   );
 
-  const { data, isLoading, refetch, error: searchError } = useQuery({
+  const { data, isLoading, error: searchError } = useQuery({
     queryKey: ["logs-search", orgId, params],
     queryFn: () => searchLogs(orgId, params),
   });
@@ -46,6 +63,8 @@ export function SearchPage() {
   const activeSeverities = params.severity?.split(",") ?? [];
 
   const toggleSeverity = (sev: Severity) => {
+    setParsedNlq(null);
+    setNlqProvider(null);
     const current = new Set(activeSeverities);
     if (current.has(sev)) current.delete(sev);
     else current.add(sev);
@@ -57,6 +76,8 @@ export function SearchPage() {
   };
 
   const toggleService = (id: string) => {
+    setParsedNlq(null);
+    setNlqProvider(null);
     setParams((p) => ({
       ...p,
       service_id: p.service_id === id ? undefined : id,
@@ -65,27 +86,59 @@ export function SearchPage() {
   };
 
   const setToday = () => {
+    setParsedNlq(null);
+    setNlqProvider(null);
     const { from, to } = todayRange();
     setParams((p) => ({ ...p, from, to, page: 1 }));
   };
 
   const handleAiQuery = async () => {
-    if (!aiQuery.trim()) return;
+    if (!aiQuery.trim() || aiLoading) return;
+    setAiError("");
+    setSummary(null);
     setAiLoading(true);
     try {
-      const { searchParams } = await aiNaturalLanguageQuery(orgId, aiQuery);
-      setParams((p) => ({ ...p, ...searchParams, page: 1 }));
-      refetch();
+      const response = await aiNlq(
+        orgId,
+        aiQuery.trim(),
+        params.page ?? 1,
+        params.limit ?? 50,
+      );
+      const newParams = nlqQueryToSearchParams(
+        response.ai.query,
+        response.result.pagination.page,
+        response.result.pagination.limit,
+      );
+      setParsedNlq(response.ai.query);
+      setNlqProvider(`${response.ai.provider} · ${response.ai.model}`);
+      setParams(newParams);
+      queryClient.setQueryData(["logs-search", orgId, newParams], response.result);
+    } catch (err) {
+      setAiError(getErrorMessage(err, "AI query failed"));
     } finally {
       setAiLoading(false);
     }
   };
 
   const handleSummarize = async () => {
+    const logsToSend = (data?.logs ?? []).slice(0, AI_LOG_CAP).map(logToAIInput);
+    if (!logsToSend.length) {
+      setAiError("Load some logs first, then summarize.");
+      return;
+    }
+    if (summaryLoading) return;
+
+    setAiError("");
     setSummaryLoading(true);
     try {
-      const result = await aiSummarize(orgId, params);
-      setSummary(result.summary);
+      const result = await aiSummarize(
+        orgId,
+        logsToSend,
+        searchWindowLabel(params),
+      );
+      setSummary(result);
+    } catch (err) {
+      setAiError(getErrorMessage(err, "Summarize failed"));
     } finally {
       setSummaryLoading(false);
     }
@@ -116,35 +169,106 @@ export function SearchPage() {
         <IconSparkles size={16} className="shrink-0 text-ll-accent" />
         <input
           className="flex-1 bg-transparent text-sm text-ll-text outline-none placeholder:text-ll-text-faint"
-          placeholder="Show payment failures from today"
+          placeholder="Show error logs from last 1 hour"
           value={aiQuery}
           onChange={(e) => setAiQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleAiQuery()}
+          disabled={aiLoading}
         />
         <Button
           variant="ghost"
           className="shrink-0 py-1"
           onClick={handleSummarize}
-          disabled={summaryLoading || !(data?.logs.length)}
+          disabled={summaryLoading || aiLoading || !logs.length}
         >
-          {summaryLoading ? "…" : "Summarize"}
+          {summaryLoading ? "Summarizing…" : "Summarize"}
         </Button>
         <Button
           variant="accent"
           className="shrink-0 py-1"
           onClick={handleAiQuery}
-          disabled={aiLoading}
+          disabled={aiLoading || !aiQuery.trim()}
         >
-          {aiLoading ? "…" : "AI query"}
+          {aiLoading ? "Thinking…" : "AI query"}
         </Button>
       </div>
 
+      <p className="mx-4 mt-1.5 text-[10px] text-ll-text-faint">{AI_LIMITS_COPY}</p>
+
+      {aiError && (
+        <div className="mx-4 mt-2 rounded-ll border border-[#e0555533] bg-[#2b0e0e] px-3 py-2">
+          <ErrorBanner message={aiError} />
+        </div>
+      )}
+
+      {parsedNlq && (
+        <div className="mx-4 mt-2 flex flex-wrap items-center gap-2">
+          <span className="text-[10px] uppercase tracking-wider text-ll-text-dim">
+            AI parsed
+          </span>
+          {nlqProvider && (
+            <span className="rounded border border-ll-border bg-ll-muted px-2 py-0.5 font-mono text-[10px] text-ll-text-faint">
+              {nlqProvider}
+            </span>
+          )}
+          {parsedNlq.severity.map((sev) => (
+            <FilterChip key={sev} active>
+              <IconAlertCircle size={13} />
+              {sev}
+            </FilterChip>
+          ))}
+          {parsedNlq.service_ids.map((id) => (
+            <FilterChip key={id} active>
+              <IconApps size={13} />
+              {serviceMap[id] ?? id.slice(0, 8)}
+            </FilterChip>
+          ))}
+          {parsedNlq.q && (
+            <FilterChip active>keyword: {parsedNlq.q}</FilterChip>
+          )}
+          {parsedNlq.from && (
+            <FilterChip active>
+              <IconCalendar size={13} />
+              from {new Date(parsedNlq.from).toLocaleString()}
+            </FilterChip>
+          )}
+        </div>
+      )}
+
       {summary && (
-        <div className="mx-4 mb-2 rounded-lg border border-ll-border bg-ll-elevated p-3 text-xs leading-relaxed text-[#a0b8c4]">
-          <div className="mb-1 text-[10px] uppercase tracking-wider text-ll-text-dim">
-            AI summary
+        <div className="mx-4 mb-2 mt-3 rounded-lg border border-ll-border bg-ll-elevated p-3">
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-[10px] uppercase tracking-wider text-ll-text-dim">
+              AI summary
+            </span>
+            <span className="font-mono text-[10px] text-ll-text-faint">
+              confidence {(summary.confidence * 100).toFixed(0)}%
+            </span>
           </div>
-          {summary}
+          <p className="text-xs leading-relaxed text-[#a0b8c4]">{summary.summary}</p>
+          {summary.highlights.length > 0 && (
+            <ul className="mt-2 list-inside list-disc text-[11px] text-ll-text-dim">
+              {summary.highlights.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          )}
+          {summary.top_errors.length > 0 && (
+            <div className="mt-2 border-t border-ll-border pt-2">
+              <div className="mb-1 text-[10px] uppercase tracking-wider text-ll-text-dim">
+                Top errors
+              </div>
+              {summary.top_errors.map((item) => (
+                <div
+                  key={item.message}
+                  className="flex justify-between gap-2 font-mono text-[11px] text-ll-text-muted"
+                >
+                  <span className="truncate">{item.message}</span>
+                  <span className="shrink-0 text-ll-error">×{item.count}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
